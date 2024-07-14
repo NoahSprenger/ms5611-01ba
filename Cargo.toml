@@ -1,0 +1,10 @@
+[package]
+name = "ms5611-01ba"
+version = "0.1.0"
+edition = "2021"
+
+[package.metadata.docs.rs]
+targets = [ "thumbv7m-none-eabi", "thumbv7em-none-eabihf" ]
+
+[dependencies]
+embedded-hal = "1.0.0"
