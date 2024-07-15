@@ -6,4 +6,5 @@ pub enum DeviceError<SPI> {
     UnderPressure,
     OverPressure,
     Uncalibrated,
+    InvalidCRC,
 }
