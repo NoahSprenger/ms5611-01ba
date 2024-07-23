@@ -10,7 +10,10 @@ use core::fmt::Debug;
 use embedded_hal::blocking::delay::DelayMs;
 use error::DeviceError;
 
-pub struct MS5611_01BA<SPI> {
+pub struct MS5611_01BA<SPI>
+where
+    SPI: FullDuplex<u16, Error = SPI> + Debug,
+{
     spi: SPI,
     calibration: Result<Calibration, DeviceError<SPI>>, // a user can choose to calibrate the device
     oversampling_ratio: OversamplingRatio,
