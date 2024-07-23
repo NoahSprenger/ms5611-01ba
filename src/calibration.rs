@@ -9,7 +9,7 @@ pub enum OversamplingRatio {
 }
 
 impl OversamplingRatio {
-    pub fn value(&self) -> u16 {
+    pub fn value(&self) -> u8 {
         match *self {
             OversamplingRatio::OSR256 => 0x00,
             OversamplingRatio::OSR512 => 0x02,
@@ -18,14 +18,14 @@ impl OversamplingRatio {
             OversamplingRatio::OSR4096 => 0x08,
         }
     }
-    pub fn delay(&self) -> u16 {
+    pub fn delay(&self) -> u8 {
         // 0.5 / 1.1 / 2.1 / 4.1 / 8.22 ms return in ns
         match *self {
-            OversamplingRatio::OSR256 => 500_000,
-            OversamplingRatio::OSR512 => 1_100_000,
-            OversamplingRatio::OSR1024 => 2_100_000,
-            OversamplingRatio::OSR2048 => 4_100_000,
-            OversamplingRatio::OSR4096 => 8_220_000,
+            OversamplingRatio::OSR256 => 1,
+            OversamplingRatio::OSR512 => 2,
+            OversamplingRatio::OSR1024 => 3,
+            OversamplingRatio::OSR2048 => 5,
+            OversamplingRatio::OSR4096 => 9,
         }
     }
 }
