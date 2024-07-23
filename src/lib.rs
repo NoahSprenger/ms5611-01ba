@@ -5,7 +5,6 @@ pub mod command;
 pub mod error;
 use calibration::{Calibration, OversamplingRatio};
 use command::Command;
-use core::fmt::Debug;
 use embedded_hal::blocking::delay::DelayMs;
 use error::DeviceError;
 
@@ -20,8 +19,7 @@ where
 
 impl<SPI> MS5611_01BA<SPI>
 where
-    SPI: FullDuplex<u8> + Debug,
-    <SPI as FullDuplex<u8>>::Error: Debug,
+    SPI: FullDuplex<u8>,
 {
     /// Create a new instance of the MS5611_01BA03
     /// Clock speed must not exceed 20MHz
