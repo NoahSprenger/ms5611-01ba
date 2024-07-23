@@ -1,11 +1,13 @@
 #![no_std]
-use embedded_hal::spi::{Operation, SpiDevice};
+use embedded_hal::blocking::spi::Operation;
+use embedded_hal::spi::FullDuplex;
 pub mod calibration;
 pub mod command;
 pub mod error;
 use calibration::{Calibration, OversamplingRatio};
 use command::Command;
-use embedded_hal::delay::DelayNs;
+use core::fmt::Debug;
+use embedded_hal::blocking::delay::DelayMs;
 use error::DeviceError;
 
 pub struct MS5611_01BA<SPI> {
@@ -16,7 +18,7 @@ pub struct MS5611_01BA<SPI> {
 
 impl<SPI> MS5611_01BA<SPI>
 where
-    SPI: SpiDevice<Error = SPI>,
+    SPI: FullDuplex<u16, Error = SPI> + Debug,
 {
     /// Create a new instance of the MS5611_01BA03
     /// Clock speed must not exceed 20MHz
@@ -48,11 +50,8 @@ where
         let mut temp_buf = [0u8; 2];
 
         for i in 0..8 {
-            spi.transaction(&mut [
-                Operation::Write(&[Command::ReadPROM(i / 4, (i / 2) % 2, i % 2).value()]),
-                Operation::Read(&mut temp_buf),
-            ])
-            .map_err(DeviceError::Spi)?;
+            spi.send(Command::ReadPROM(i / 4, (i / 2) % 2, i % 2).value());
+            let temp_val = spi.read().map_err(DeviceError::Spi).unwrap();
             buf[i as usize] = u16::from_be_bytes(temp_buf);
         }
 
@@ -72,64 +71,59 @@ where
     }
 
     pub fn reset(&mut self) -> Result<(), DeviceError<SPI::Error>> {
-        self.spi
-            .transaction(&mut [Operation::Write(&[Command::Reset.value()])])
-            .map_err(DeviceError::Spi)?;
+        self.spi.send(Command::Reset.value());
         Ok(())
     }
 
-    fn read_digital_temp<Delay: DelayNs>(
+    fn read_digital_temp<Delay: DelayMs<u16>>(
         &mut self,
         delay: &mut Delay,
     ) -> Result<u32, DeviceError<SPI::Error>> {
         // send d2 conversion command
         // wait for conversion
         // read digital temperature
+        self.spi
+            .send(Command::D2Conversion(self.oversampling_ratio.clone()).value());
+
+        delay.delay_ms(self.oversampling_ratio.delay());
+
         let mut temp_buf = [0u8; 4];
-        self.spi
-            .transaction(&mut [Operation::Write(&[Command::D2Conversion(
-                self.oversampling_ratio.clone(),
-            )
-            .value()])])
-            .map_err(DeviceError::Spi)?;
 
-        delay.delay_ns(self.oversampling_ratio.delay());
+        self.spi.send(Command::ReadADC.value());
+        let temp_val = self.spi.read().unwrap();
+        let second_temp_val = self.spi.read().unwrap();
 
-        self.spi
-            .transaction(&mut [
-                Operation::Write(&[Command::ReadADC.value()]),
-                Operation::Read(&mut temp_buf[1..]), // skip first byte. ADC return is 24 bits.
-            ])
-            .map_err(DeviceError::Spi)?;
-
+        temp_buf[0] = (temp_val >> 8) as u8;
+        temp_buf[1] = temp_val as u8;
+        temp_buf[2] = (second_temp_val >> 8) as u8;
+        temp_buf[3] = second_temp_val as u8;
         Ok(u32::from_be_bytes(temp_buf))
     }
 
-    fn read_digital_pressure<Delay: DelayNs>(
+    fn read_digital_pressure<Delay: DelayMs<u16>>(
         &mut self,
         delay: &mut Delay,
     ) -> Result<u32, DeviceError<SPI::Error>> {
         let mut temp_buf = [0u8; 4];
-        self.spi
-            .transaction(&mut [Operation::Write(&[Command::D1Conversion(
-                self.oversampling_ratio.clone(),
-            )
-            .value()])])
-            .map_err(DeviceError::Spi)?;
-
-        delay.delay_ns(self.oversampling_ratio.delay());
 
         self.spi
-            .transaction(&mut [
-                Operation::Write(&[Command::ReadADC.value()]),
-                Operation::Read(&mut temp_buf[1..]), // skip first byte. ADC return is 24 bits.
-            ])
-            .map_err(DeviceError::Spi)?;
+            .send(Command::D1Conversion(self.oversampling_ratio.clone()).value());
 
+        delay.delay_ms(self.oversampling_ratio.delay());
+
+        self.spi.send(Command::ReadADC.value());
+
+        let temp_val = self.spi.read().unwrap();
+        let second_temp_val = self.spi.read().unwrap();
+
+        temp_buf[0] = (temp_val >> 8) as u8;
+        temp_buf[1] = temp_val as u8;
+        temp_buf[2] = (second_temp_val >> 8) as u8;
+        temp_buf[3] = second_temp_val as u8;
         Ok(u32::from_be_bytes(temp_buf))
     }
 
-    fn get_temperature_uncompensated<Delay: DelayNs>(
+    fn get_temperature_uncompensated<Delay: DelayMs<u16>>(
         &mut self,
         delay: &mut Delay,
     ) -> Result<(i32, i32), DeviceError<SPI>> {
@@ -175,13 +169,13 @@ where
     }
 
     /// Returns (pressure mbar, temperature celcius)
-    pub fn get_data<Delay: DelayNs>(
+    pub fn get_data<Delay: DelayMs<u16>>(
         &mut self,
         delay: &mut Delay,
     ) -> Result<(i32, i32), DeviceError<SPI::Error>> {
         let (temp, d_t) = self.get_temperature_uncompensated(delay)?;
         let (temp, mut off, mut sens) = self.temp_compensate(temp, d_t)?;
-        let d1 = self.read_digital_pressure(delay)?;
+        let d1 = self.read_digital_pressure(delay).unwrap();
         if let Ok(ref calibration) = self.calibration {
             off += calibration.tco as i64 * d_t as i64;
             sens += calibration.tcs as i64 * d_t as i64;
