@@ -5,7 +5,6 @@ pub mod command;
 pub mod error;
 use calibration::{Calibration, OversamplingRatio};
 use command::Command;
-use embedded_hal::blocking::delay::DelayMs;
 use error::DeviceError;
 
 pub struct MS5611_01BA<SPI>
@@ -80,10 +79,7 @@ where
             .map_err(|_| DeviceError::Io)
     }
 
-    fn read_digital_temp<Delay: DelayMs<u8>>(
-        &mut self,
-        delay: &mut Delay,
-    ) -> Result<u32, DeviceError> {
+    fn read_digital_temp(&mut self) -> Result<u32, DeviceError> {
         // send d2 conversion command
         // wait for conversion
         // read digital temperature
@@ -91,8 +87,6 @@ where
             .send(Command::D2Conversion(self.oversampling_ratio.clone()).value())
             .map_err(|_| DeviceError::Io)?;
 
-        delay.delay_ms(self.oversampling_ratio.delay());
-
         let mut temp_buf = [0u8; 4];
 
         self.spi
@@ -105,18 +99,13 @@ where
         Ok(u32::from_be_bytes(temp_buf))
     }
 
-    fn read_digital_pressure<Delay: DelayMs<u8>>(
-        &mut self,
-        delay: &mut Delay,
-    ) -> Result<u32, DeviceError> {
+    fn read_digital_pressure(&mut self) -> Result<u32, DeviceError> {
         let mut temp_buf = [0u8; 4];
 
         self.spi
             .send(Command::D1Conversion(self.oversampling_ratio.clone()).value())
             .map_err(|_| DeviceError::Io)?;
 
-        delay.delay_ms(self.oversampling_ratio.delay());
-
         self.spi
             .send(Command::ReadADC.value())
             .map_err(|_| DeviceError::Io)?;
@@ -128,13 +117,10 @@ where
         Ok(u32::from_be_bytes(temp_buf))
     }
 
-    fn get_temperature_uncompensated<Delay: DelayMs<u8>>(
-        &mut self,
-        delay: &mut Delay,
-    ) -> Result<(i32, i32), DeviceError> {
+    fn get_temperature_uncompensated(&mut self) -> Result<(i32, i32), DeviceError> {
         // Read digital temperature
         // Calculate temperature
-        let digital_temp = self.read_digital_temp(delay)?;
+        let digital_temp = self.read_digital_temp()?;
 
         if let Ok(ref calibration) = self.calibration {
             let d_t: i32 = digital_temp as i32 - calibration.t_ref as i32;
@@ -174,13 +160,10 @@ where
     }
 
     /// Returns (pressure mbar, temperature celcius)
-    pub fn get_data<Delay: DelayMs<u8>>(
-        &mut self,
-        delay: &mut Delay,
-    ) -> Result<(i32, i32), DeviceError> {
-        let (temp, d_t) = self.get_temperature_uncompensated(delay)?;
+    pub fn get_data(&mut self) -> Result<(i32, i32), DeviceError> {
+        let (temp, d_t) = self.get_temperature_uncompensated()?;
         let (temp, mut off, mut sens) = self.temp_compensate(temp, d_t)?;
-        let d1 = self.read_digital_pressure(delay).unwrap();
+        let d1 = self.read_digital_pressure().unwrap();
         if let Ok(ref calibration) = self.calibration {
             off += calibration.tco as i64 * d_t as i64;
             sens += calibration.tcs as i64 * d_t as i64;
