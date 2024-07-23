@@ -1,8 +1,8 @@
 #![no_std]
 use embedded_hal::spi::{Operation, SpiDevice};
-mod calibration;
-mod command;
-mod error;
+pub mod calibration;
+pub mod command;
+pub mod error;
 use calibration::{Calibration, OversamplingRatio};
 use command::Command;
 use embedded_hal::delay::DelayNs;
