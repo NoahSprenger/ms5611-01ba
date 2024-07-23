@@ -12,7 +12,8 @@ use error::DeviceError;
 
 pub struct MS5611_01BA<SPI>
 where
-    SPI: FullDuplex<u16, Error = SPI> + Debug,
+    SPI: FullDuplex<u16>,
+    <SPI as FullDuplex<u16>>::Error: Debug,
 {
     spi: SPI,
     calibration: Result<Calibration, DeviceError<SPI>>, // a user can choose to calibrate the device
