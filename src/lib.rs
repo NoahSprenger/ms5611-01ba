@@ -2,7 +2,6 @@
 //! using the `embedded-hal` traits.
 
 #![no_std]
-#![allow(clippy::needless_range_loop)] // Allow for i in 0..16 loop in CRC check
 
 use embedded_hal::delay::DelayNs;
 use embedded_hal::spi::{Operation, SpiDevice};
@@ -41,60 +40,38 @@ where
 
 impl<SPI, Delay, SpiE> MS5611_01BA<SPI, Delay>
 where
-    SPI: SpiDevice<u8, Error = SpiE>, // Specify u8 data width for SPI operations
+    SPI: SpiDevice<u8, Error = SpiE>,
     SpiE: Clone,
     Delay: DelayNs,
 {
-    /// Creates a new driver instance, performs an initial reset, and reads
-    /// the factory calibration data from the sensor's PROM.
-    ///
-    /// # Arguments
-    ///
-    /// * `spi` - An SPI peripheral implementing `embedded_hal::spi::SpiDevice<u8>`.
-    ///           Clock speed should not exceed 20MHz. Mode 0 or 3 supported.
-    /// * `delay` - A delay provider implementing `embedded_hal::delay::DelayNs`.
-    /// * `oversampling_ratio` - The desired default oversampling ratio for measurements.
-    ///
-    /// # Errors
-    ///
-    /// Returns `DeviceError::Spi` if SPI communication fails during reset or calibration.
-    /// Returns `DeviceError::InvalidCRC` if the PROM data checksum is incorrect,
-    /// indicating potentially corrupted calibration data.
+    /// Create a new instance of the MS5611_01BA03
+    /// Clock speed must not exceed 20MHz
+    /// Accept mode 0 or 3.
+    /// Default to OSR1024
     pub fn new(
         mut spi: SPI,
         mut delay: Delay,
         oversampling_ratio: OversamplingRatio,
     ) -> Result<Self, DeviceError<SpiE>> {
-        // 1. Reset the device to ensure a known state
+        // Reset device
         spi.write(&[Command::Reset.value()])
             .map_err(DeviceError::Spi)?;
-
-        // 2. Wait for the reset sequence and PROM reload to complete.
+        // Wait reset to complete
         delay.delay_ms(RESET_DELAY_MS);
+        // Read calibration data and check CRC
+        let calibration_result = Self::read_calibration_data(&mut spi)?;
 
-        // 3. Read and validate calibration data.
-        let calibration_result = Self::read_calibration_data(&mut spi)?; // Propagate SPI errors from here
-
-        // 4. Check CRC (read_calibration_data includes this check now)
-        // Note: calibration_result is already checked for CRC within read_calibration_data
-
-        // 5. Construct the driver instance
+        // Create instance
         Ok(Self {
             spi,
             delay,
-            calibration: Ok(calibration_result), // Store the successful Calibration data
+            calibration: Ok(calibration_result),
             oversampling_ratio,
         })
     }
 
     /// Reads the 8 PROM words (16 bytes total) containing factory calibration
     /// coefficients and performs a CRC check.
-    ///
-    /// # Returns
-    ///
-    /// `Ok(Calibration)` if PROM read is successful and CRC check passes.
-    /// `Err(DeviceError::Spi)` if communication fails.
-    /// `Err(DeviceError::InvalidCRC)` if the CRC check fails.
     fn read_calibration_data(spi: &mut SPI) -> Result<Calibration, DeviceError<SpiE>> {
         let mut prom_data = [0u16; 8]; // Buffer for 8x 16-bit words
         let mut read_buf = [0u8; 2]; // Temp buffer for SPI read
@@ -110,17 +87,10 @@ where
             prom_data[i] = u16::from_be_bytes(read_buf);
         }
 
-        // Make a mutable copy to pass to the CRC validation function,
-        // as it modifies the array (clears CRC bits in word 7).
-        let mut prom_data_for_crc = prom_data;
-
-        // Validate CRC using the read data
-        if !Self::validate_crc4(&mut prom_data_for_crc) {
+        if !Self::validate_crc4(&mut prom_data) {
             return Err(DeviceError::InvalidCRC);
         }
 
-        // If CRC is valid, create and return the Calibration struct
-        // using the original, unmodified prom_data array.
         Ok(Calibration::new(&prom_data))
     }
 
@@ -135,7 +105,6 @@ where
     }
 
     /// Sends the reset command to the sensor and waits for it to initialize.
-    /// This can be used if the sensor enters an unknown state.
     pub fn reset(&mut self) -> Result<(), DeviceError<SpiE>> {
         self.spi
             .write(&[Command::Reset.value()])
@@ -207,15 +176,6 @@ where
     /// Reads the current temperature, applying first-order compensation.
     /// For potentially higher accuracy (especially at temperature extremes),
     /// use `read_compensated_data` which includes second-order compensation.
-    ///
-    /// # Returns
-    ///
-    /// Temperature in hundredths of degrees Celsius (e.g., 2007 means 20.07 °C).
-    ///
-    /// # Errors
-    ///
-    /// Returns `DeviceError::Uncalibrated` if calibration data is missing/invalid.
-    /// Returns `DeviceError::Spi` if communication fails.
     pub fn read_temperature(&mut self) -> Result<i32, DeviceError<SpiE>> {
         // Ensure calibration data is valid before proceeding
         let cal = match self.calibration {
@@ -248,19 +208,6 @@ where
 
     /// Reads both pressure and temperature, applying second-order compensation
     /// for the highest accuracy according to the datasheet formulas.
-    ///
-    /// # Returns
-    ///
-    /// A tuple `(pressure, temperature)` on success:
-    /// * `pressure`: Pressure in Pascals (Pa). Note: 100 Pa = 1 mbar. (e.g., 100009 Pa = 1000.09 mbar).
-    /// * `temperature`: Temperature in hundredths of degrees Celsius (e.g., 2007 means 20.07 °C).
-    ///
-    /// # Errors
-    ///
-    /// Returns `DeviceError::Uncalibrated` if calibration data is missing/invalid.
-    /// Returns `DeviceError::Spi` if communication fails during readings.
-    /// May return `DeviceError::{Under/Over}{Temperature/Pressure}` if the final
-    /// calculated values fall outside the sensor's operating range.
     pub fn read_compensated_data(&mut self) -> Result<(i32, i32), DeviceError<SpiE>> {
         // Ensure calibration data is valid
         let cal = match self.calibration {
@@ -347,18 +294,7 @@ where
     }
 
     /// Validates the 4-bit CRC checksum of the PROM data.
-    ///
     /// The algorithm is based on Application Note AN520.
-    ///
-    /// # Arguments
-    ///
-    /// * `prom_data` - A mutable slice containing the 8x 16-bit words read from PROM.
-    ///                 This function **will modify** word 7 by clearing the CRC bits
-    ///                 during calculation. Pass a copy if the original is needed later.
-    ///
-    /// # Returns
-    ///
-    /// `true` if the calculated CRC matches the one stored in PROM word 7, `false` otherwise.
     fn validate_crc4(prom_data: &mut [u16; 8]) -> bool {
         let mut n_rem = 0u16; // CRC remainder, initialized to 0
 
