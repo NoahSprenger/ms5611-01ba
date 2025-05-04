@@ -1,6 +1,6 @@
 #[derive(Copy, Clone, Debug)]
-pub enum DeviceError {
-    Io,
+pub enum DeviceError<SPI> {
+    Spi(SPI),
     UnderTemperature,
     OverTemperature,
     UnderPressure,

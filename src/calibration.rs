@@ -1,5 +1,5 @@
 /// Oversampling Ratio
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum OversamplingRatio {
     OSR256,
     OSR512,
@@ -18,6 +18,8 @@ impl OversamplingRatio {
             OversamplingRatio::OSR4096 => 0x08,
         }
     }
+
+    /// Gets the required typical conversion delay in MILLISECONDS.
     pub fn delay(&self) -> u8 {
         // 0.5 / 1.1 / 2.1 / 4.1 / 8.22 ms return in ns
         match *self {
@@ -30,21 +32,29 @@ impl OversamplingRatio {
     }
 }
 
-#[derive(Clone, Copy)]
+/// Factory calibration data read from PROM
+#[derive(Clone, Copy, Debug)]
 pub struct Calibration {
-    pub sens: u16,
-    pub off: u16,
-    pub tcs: u16, // temperature coefficient of sensitivity
-    pub tco: u16, // temperature coefficient of offset
+    /// C1: Pressure sensitivity | SENST1
+    pub sens_t1: u16,
+    /// C2: Pressure offset | OFFT1
+    pub off_t1: u16,
+    /// C3: Temperature coefficient of pressure sensitivity | TCS
+    pub tcs: u16,
+    /// C4: Temperature coefficient of pressure offset | TCO
+    pub tco: u16,
+    /// C5: Reference temperature | TREF
     pub t_ref: u16,
+    /// C6: Temperature coefficient of the temperature | TEMPSENS
     pub temp_sens: u16,
+    // We don't store PROM[0] (manufacturer info) or PROM[7] (Serial/CRC) here
 }
 
 impl Calibration {
     pub fn new(buf: &[u16; 8]) -> Calibration {
         Calibration {
-            sens: buf[1],
-            off: buf[2],
+            sens_t1: buf[1],
+            off_t1: buf[2],
             tcs: buf[3],
             tco: buf[4],
             t_ref: buf[5],
