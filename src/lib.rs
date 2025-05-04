@@ -48,26 +48,24 @@ where
     /// Clock speed must not exceed 20MHz
     /// Accept mode 0 or 3.
     /// Default to OSR1024
-    pub fn new(
-        mut spi: SPI,
-        mut delay: Delay,
-        oversampling_ratio: OversamplingRatio,
-    ) -> Result<Self, DeviceError<SpiE>> {
-        // Reset device
-        spi.write(&[Command::Reset.value()])
-            .map_err(DeviceError::Spi)?;
+    pub fn new(mut spi: SPI, mut delay: Delay, oversampling_ratio: OversamplingRatio) -> Self {
+        // Reset device and ignore error
+        let _write = spi
+            .write(&[Command::Reset.value()])
+            .map_err(DeviceError::Spi);
+
         // Wait reset to complete
         delay.delay_ms(RESET_DELAY_MS);
         // Read calibration data and check CRC
-        let calibration_result = Self::read_calibration_data(&mut spi)?;
+        let calibration_result = Self::read_calibration_data(&mut spi);
 
         // Create instance
-        Ok(Self {
+        Self {
             spi,
             delay,
-            calibration: Ok(calibration_result),
+            calibration: calibration_result,
             oversampling_ratio,
-        })
+        }
     }
 
     /// Reads the 8 PROM words (16 bytes total) containing factory calibration
