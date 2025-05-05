@@ -7,5 +7,5 @@ edition = "2021"
 targets = ["thumbv7m-none-eabi", "thumbv7em-none-eabihf"]
 
 [dependencies]
-embedded-hal = "0.2.3"
+embedded-hal-nb = "1.0.0"
 

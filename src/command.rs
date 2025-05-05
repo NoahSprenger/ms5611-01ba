@@ -1,9 +1,9 @@
 use crate::calibration::OversamplingRatio;
 
+#[derive(Debug)]
 pub enum Command {
     Reset,
-    ReadPROM(u8, u8, u8), // (ad2, ad1, ad0) 128 bit calibration words not a fan since adx can only
-    // be 0 or 1.
+    ReadPROM(u8), // Takes address 0-7 directly
     D1Conversion(OversamplingRatio),
     D2Conversion(OversamplingRatio),
     ReadADC, // 24 bit pressure / temperature
@@ -13,10 +13,106 @@ impl Command {
     pub fn value(&self) -> u8 {
         match self {
             Command::Reset => 0x1E,
-            Command::ReadPROM(ad2, ad1, ad0) => 0xA0 | (ad2 << 1) | (ad1 << 2) | (ad0 << 3),
+            Command::ReadPROM(address) => {
+                let addr = address & 0x07;
+                0xA0 | (addr << 1)
+            }
             Command::D1Conversion(ratio) => 0x40 | ratio.value(),
             Command::D2Conversion(ratio) => 0x50 | ratio.value(),
             Command::ReadADC => 0x00,
         }
     }
+}
+
+// --- Tests ---
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn check_command_reset() {
+        let command = Command::Reset;
+        assert_eq!(command.value(), 0x1E, "Reset command mismatch");
+    }
+
+    #[test]
+    fn check_command_read_adc() {
+        let command = Command::ReadADC;
+        assert_eq!(command.value(), 0x00, "ReadADC command mismatch");
+    }
+
+    #[test]
+    fn check_command_d1_conversion_all_osr() {
+        let test_cases = [
+            (OversamplingRatio::OSR256, 0x40),
+            (OversamplingRatio::OSR512, 0x42),
+            (OversamplingRatio::OSR1024, 0x44),
+            (OversamplingRatio::OSR2048, 0x46),
+            (OversamplingRatio::OSR4096, 0x48),
+        ];
+        for (osr, expected_value) in test_cases {
+            let command = Command::D1Conversion(osr.clone());
+            assert_eq!(
+                command.value(),
+                expected_value,
+                "D1 Conversion mismatch for OSR {:?}",
+                osr
+            );
+        }
+    }
+
+    #[test]
+    fn check_command_d2_conversion_all_osr() {
+        let test_cases = [
+            (OversamplingRatio::OSR256, 0x50),
+            (OversamplingRatio::OSR512, 0x52),
+            (OversamplingRatio::OSR1024, 0x54),
+            (OversamplingRatio::OSR2048, 0x56),
+            (OversamplingRatio::OSR4096, 0x58),
+        ];
+        for (osr, expected_value) in test_cases {
+            let command = Command::D2Conversion(osr.clone());
+            assert_eq!(
+                command.value(),
+                expected_value,
+                "D2 Conversion mismatch for OSR {:?}",
+                osr
+            );
+        }
+    }
+
+    #[test]
+    fn check_command_read_prom_all_addresses() {
+        for address in 0..8 {
+            let expected_value = 0xA0 | (address << 1);
+            let command = Command::ReadPROM(address);
+            let actual_value = command.value();
+            assert_eq!(
+                actual_value, expected_value,
+                "ReadPROM command mismatch for address {}. Expected {:#04X}, got {:#04X}",
+                address, expected_value, actual_value
+            );
+        }
+    }
+
+    #[test]
+    fn check_read_prom_address_clamping() {
+        let command_high = Command::ReadPROM(10);
+        let expected_high = 0xA0 | (2 << 1); // 0xA4
+        assert_eq!(
+            command_high.value(),
+            expected_high,
+            "ReadPROM address clamping failed for high value"
+        );
+        let command_exact = Command::ReadPROM(7);
+        let expected_exact = 0xA0 | (7 << 1); // 0xAE
+        assert_eq!(
+            command_exact.value(),
+            expected_exact,
+            "ReadPROM address clamping failed for exact value 7"
+        );
+    }
+
+    #[test]
+    fn check_temp_compensation() {}
 }
